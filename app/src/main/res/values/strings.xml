@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">HelpMom – Madre Gestante</string>
+    <string name="nav_home">Inicio</string>
+    <string name="nav_body">Mi Cuerpo</string>
+    <string name="nav_assistant">Asistente</string>
+    <string name="nav_learning">Aprendizaje</string>
+    <string name="screen_login">Ingresar o crear cuenta</string>
+    <string name="screen_terms">Términos y condiciones</string>
+    <string name="screen_pregnancy_setup">Configurar embarazo</string>
+    <string name="screen_profile">Perfil</string>
+    <string name="screen_invite_partner">Vincular acompañante</string>
+    <string name="terms_body">HelpMom es una simulación educativa y no reemplaza la atención de un profesional de salud. La app guarda los valores simulados de frecuencia cardíaca fetal y temperatura, los síntomas que registres y los mensajes de triage para acompañar tu experiencia. Tu acompañante solo ve el color del semáforo, la semana de gestación y las alertas que tú envías. Puedes desvincularlo cuando quieras desde Perfil. Para borrar tu cuenta y tus datos, solicita la eliminación desde Perfil o contacta al equipo HelpMom. Al aceptar, confirmas que comprendes el alcance educativo de esta aplicación.</string>
+</resources>

@@ -1,0 +1,5 @@
+[
+  {"id":"semana-1","title":"Alimentación sencilla para tu semana","category":"Nutrición","weekStart":1,"weekEnd":42,"summary":"Ideas prácticas para comer con calma y variedad.","body":"Elige alimentos variados y toma agua durante el día. Esta guía es educativa; consulta con tu equipo de salud tus necesidades personales.","imageUrl":"https://images.unsplash.com/photo-1490645935967-10de6ba17061?w=900"},
+  {"id":"movimiento","title":"Movimiento suave y descanso","category":"Ejercicio","weekStart":1,"weekEnd":42,"summary":"Escucha tu cuerpo y encuentra pausas amables.","body":"Una caminata tranquila puede ayudarte a sentirte bien si tu profesional de salud la considera adecuada. Detente si algo te preocupa.","imageUrl":"https://images.unsplash.com/photo-1518611012118-696072aa579a?w=900"},
+  {"id":"parto","title":"Prepararte para el parto","category":"Parto","weekStart":28,"weekEnd":42,"summary":"Conoce tus opciones y prepara tus preguntas.","body":"Conversar con tu equipo y acompañante puede ayudarte a sentirte acompañada. Cada experiencia es distinta.","imageUrl":"https://images.unsplash.com/photo-1519689680058-324335c77eba?w=900"}
+]
