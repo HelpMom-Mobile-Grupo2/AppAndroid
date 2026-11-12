@@ -67,6 +67,21 @@ class SessionStore(context: Context) {
         dataStore.edit { it[PREGNANCY_ID] = pregnancyId }
     }
 
+    /** Última invitación generada, para no crear un código nuevo cada vez que se abre Vincular. */
+    suspend fun saveInvitation(code: String, expiresAt: String) {
+        dataStore.edit {
+            it[INVITE_CODE] = code
+            it[INVITE_EXPIRES_AT] = expiresAt
+        }
+    }
+
+    suspend fun savedInvitation(): Pair<String, String>? {
+        val preferences = dataStore.data.first()
+        val code = preferences[INVITE_CODE] ?: return null
+        val expiresAt = preferences[INVITE_EXPIRES_AT] ?: return null
+        return code to expiresAt
+    }
+
     suspend fun acceptTerms(acceptedAtEpochMillis: Long) {
         dataStore.edit {
             it[TERMS_ACCEPTED] = true
@@ -88,5 +103,7 @@ class SessionStore(context: Context) {
         val PREGNANCY_ID = stringPreferencesKey("pregnancy_id")
         val TERMS_ACCEPTED = booleanPreferencesKey("terms_accepted")
         val TERMS_ACCEPTED_AT = longPreferencesKey("terms_accepted_at")
+        val INVITE_CODE = stringPreferencesKey("invite_code")
+        val INVITE_EXPIRES_AT = stringPreferencesKey("invite_expires_at")
     }
 }

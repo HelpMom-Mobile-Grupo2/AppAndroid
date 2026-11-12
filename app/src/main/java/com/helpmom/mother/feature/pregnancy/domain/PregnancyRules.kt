@@ -82,3 +82,36 @@ fun trimester(gestationalWeeks: Int): Int = when (gestationalWeeks) {
 
 fun daysRemaining(dueDate: LocalDate, today: LocalDate = LocalDate.now()): Long =
     ChronoUnit.DAYS.between(today, dueDate).coerceAtLeast(0)
+
+/** "Hace un momento", "Hace N min", "Hace N h" o "Hace N días" a partir de una fecha ISO del backend. */
+fun timeAgoLabel(isoDateTime: String?, now: java.time.Instant = java.time.Instant.now()): String {
+    val instant = isoDateTime?.let { runCatching { java.time.OffsetDateTime.parse(it).toInstant() }.getOrNull() }
+        ?: return ""
+    val minutes = java.time.Duration.between(instant, now).toMinutes().coerceAtLeast(0)
+    return when {
+        minutes < 1 -> "Hace un momento"
+        minutes < 60 -> "Hace $minutes min"
+        minutes < 60 * 24 -> "Hace ${minutes / 60} h"
+        else -> "Hace ${minutes / (60 * 24)} días"
+    }
+}
+
+/** Texto del badge del semáforo: 1 Estable, 2 Atención, 3 Urgente. */
+fun healthBadgeLabel(healthLight: Int?): String = when (healthLight) {
+    3 -> "Urgente"
+    2 -> "Atención"
+    1 -> "Estable"
+    else -> "Sin datos"
+}
+
+/** Texto del estado de salud: 1 Normal, 2 Atención, 3 Urgente. */
+fun healthStatusLabel(healthLight: Int?): String = when (healthLight) {
+    3 -> "Urgente"
+    2 -> "Atención"
+    1 -> "Normal"
+    else -> "Sin mediciones"
+}
+
+/** La FPP debe ser posterior a la FUM y como máximo FUM + 308 días (44 semanas). */
+fun isValidDueDate(lastMenstrualPeriod: LocalDate, dueDate: LocalDate): Boolean =
+    dueDate.isAfter(lastMenstrualPeriod) && !dueDate.isAfter(lastMenstrualPeriod.plusDays(308))

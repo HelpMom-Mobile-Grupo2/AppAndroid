@@ -38,10 +38,11 @@ fun InvitePartnerScreen(onBack: () -> Unit = {}) {
     val vm: InvitePartnerViewModel = viewModel(factory = object : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            InvitePartnerViewModel(app.container.familyApi) as T
+            InvitePartnerViewModel(app.container.familyApi, app.container.sessionStore) as T
     })
 
     var isCopied by remember { mutableStateOf(false) }
+    var confirmNewCode by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         vm.loadOrGenerateInvitation()
@@ -55,7 +56,7 @@ fun InvitePartnerScreen(onBack: () -> Unit = {}) {
             .background(MaterialTheme.colorScheme.background)
     ) {
         TopAppBar(
-            title = { Text("Vincular Acompañante", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+            title = { Text("Vincular acompañante", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
             navigationIcon = {
                 IconButton(onClick = onBack) {
                     Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Atrás")
@@ -182,6 +183,7 @@ fun InvitePartnerScreen(onBack: () -> Unit = {}) {
                 ) {
                     Text("1. Tu pareja instala la app y escoge \"Soy Acompañante\".", style = MaterialTheme.typography.bodySmall)
                     Text("2. Escanea este código o ingresa la clave manual.", style = MaterialTheme.typography.bodySmall)
+                    Text("3. Cuando se vincule, recibirá tus avisos de Pasa la Voz.", style = MaterialTheme.typography.bodySmall)
                 }
             }
 
@@ -193,7 +195,7 @@ fun InvitePartnerScreen(onBack: () -> Unit = {}) {
                             type = "text/plain"
                             putExtra(Intent.EXTRA_TEXT, "Únete a HelpMom en el Modo Compañero usando el código: ${vm.code}")
                         }
-                        context.startActivity(Intent.createChooser(sendIntent, "Compartir Enlace de Invitación"))
+                        context.startActivity(Intent.createChooser(sendIntent, "Compartir enlace de invitación"))
                     }
                 },
                 enabled = vm.code.isNotBlank(),
@@ -204,8 +206,36 @@ fun InvitePartnerScreen(onBack: () -> Unit = {}) {
             ) {
                 Icon(Icons.Rounded.Share, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text("Compartir Enlace de Invitación", fontWeight = FontWeight.Bold)
+                Text("Compartir enlace de invitación", fontWeight = FontWeight.Bold)
+            }
+
+            vm.errorMessage?.let { message ->
+                Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+
+            TextButton(
+                onClick = { confirmNewCode = true },
+                enabled = !vm.isLoading
+            ) {
+                Text("Generar nuevo código")
             }
         }
+    }
+
+    if (confirmNewCode) {
+        AlertDialog(
+            onDismissRequest = { confirmNewCode = false },
+            title = { Text("¿Generar un código nuevo?", fontWeight = FontWeight.Bold) },
+            text = { Text("El código actual dejará de funcionar. Si ya se lo enviaste a tu pareja, tendrás que compartir el nuevo.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmNewCode = false
+                    vm.generateNewInvitation()
+                }) { Text("Generar", fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmNewCode = false }) { Text("Cancelar") }
+            }
+        )
     }
 }

@@ -9,6 +9,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,10 +25,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.helpmom.mother.HelpMomApp
+import com.helpmom.mother.core.network.formatForPhone
 import com.helpmom.mother.core.ui.theme.*
 import com.helpmom.mother.feature.alerts.ui.EmergencyDialog
 import com.helpmom.mother.feature.pregnancy.domain.urgencyLabel
-import kotlinx.coroutines.launch
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.text.style.TextAlign
+import com.helpmom.mother.feature.triage.data.TriageSummaryDto
 
 @Composable
 fun ChatScreen() {
@@ -37,8 +44,16 @@ fun ChatScreen() {
             ChatViewModel(app.container.triageApi) as T
     })
 
-    val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+    var showHistory by rememberSaveable { mutableStateOf(false) }
+    val messages = vm.conversation?.messages.orEmpty()
+    // Índice del último mensaje del asistente: solo ahí va el chip de urgencia.
+    val lastAssistantIndex = messages.indexOfLast { it.author == 2 }
+
+    // Baja al último mensaje cuando llega uno nuevo.
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
+    }
 
     // Header (Item 5: Asistente simulado, no reemplaza a tu médico)
     Column(
@@ -72,25 +87,66 @@ fun ChatScreen() {
                         fontSize = 16.sp
                     )
                 }
-                Column {
+                Column(Modifier.weight(1f)) {
                     Text(
-                        "Asistente Prenatal HelpMom",
+                        "Asistente prenatal HelpMom",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        "Asistente simulado, no reemplaza a tu médico",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        "● En línea 24/7",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = HealthGreen
                     )
+                }
+                IconButton(onClick = {
+                    showHistory = !showHistory
+                    if (showHistory) vm.loadHistory()
+                }) {
+                    Icon(Icons.Rounded.History, contentDescription = "Conversaciones anteriores")
                 }
             }
         }
 
-        // Chat messages list
-        val messages = vm.conversation?.messages.orEmpty()
+        Text(
+            "Asistente simulado, no reemplaza a tu médico.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp),
+            textAlign = TextAlign.Center
+        )
 
-        LazyColumn(
+        if (showHistory) {
+            ConversationHistory(
+                vm = vm,
+                modifier = Modifier.weight(1f),
+                onOpen = { id ->
+                    vm.openConversation(id)
+                    showHistory = false
+                },
+                onNew = {
+                    vm.newConversation()
+                    showHistory = false
+                }
+            )
+        } else if (messages.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(32.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "Cuéntame cómo te sientes. Por ejemplo: \"tengo náuseas leves\" o \"me duele la cabeza\".",
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else LazyColumn(
             state = listState,
             modifier = Modifier
                 .weight(1f)
@@ -98,7 +154,7 @@ fun ChatScreen() {
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            items(messages) { msg ->
+            itemsIndexed(messages, key = { _, msg -> msg.id }) { index, msg ->
                 val isMother = msg.author == 1
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -119,7 +175,7 @@ fun ChatScreen() {
                             )
 
                             // Show urgency chip for assistant responses
-                            if (!isMother) {
+                            if (!isMother && index == lastAssistantIndex) {
                                 val urgency = vm.conversation?.urgency
                                 val chipText = urgencyLabel(urgency)
                                 if (chipText.isNotBlank()) {
@@ -173,6 +229,7 @@ fun ChatScreen() {
             ) {
                 OutlinedTextField(
                     value = vm.inputMessage,
+                    enabled = vm.emergencyGuidance == null,
                     onValueChange = { vm.inputMessage = it },
                     placeholder = { Text("Escribe tu consulta aquí…") },
                     modifier = Modifier.weight(1f),
@@ -185,14 +242,8 @@ fun ChatScreen() {
                 )
 
                 IconButton(
-                    onClick = {
-                        vm.sendMessage()
-                        scope.launch {
-                            val count = vm.conversation?.messages?.size ?: 0
-                            if (count > 0) listState.animateScrollToItem(count - 1)
-                        }
-                    },
-                    enabled = !vm.isSending,
+                    onClick = { vm.sendMessage() },
+                    enabled = !vm.isSending && vm.emergencyGuidance == null,
                     modifier = Modifier
                         .size(48.dp)
                         .clip(CircleShape)
@@ -213,5 +264,92 @@ fun ChatScreen() {
         EmergencyDialog(guidance = guidance) {
             vm.dismissEmergency()
         }
+    }
+}
+
+@Composable
+private fun ConversationHistory(
+    vm: ChatViewModel,
+    modifier: Modifier,
+    onOpen: (String) -> Unit,
+    onNew: () -> Unit
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Conversaciones anteriores", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            TextButton(onClick = onNew) {
+                Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Nueva")
+            }
+        }
+        when {
+            vm.isLoadingHistory -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+            vm.history.isEmpty() -> Text(
+                "Todavía no tienes conversaciones.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(vm.history, key = { it.id }) { item -> ConversationRow(item) { onOpen(item.id) } }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConversationRow(item: TriageSummaryDto, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    runCatching { formatForPhone(item.createdAt) }.getOrDefault(item.createdAt),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+                UrgencyChip(item.urgency)
+            }
+            Text(item.lastMessage, maxLines = 2, style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+}
+
+@Composable
+private fun UrgencyChip(urgency: Int?) {
+    val text = urgencyLabel(urgency)
+    if (text.isBlank()) return
+    val (bgColor, textColor) = when (urgency) {
+        1 -> HealthGreenContainer to HealthGreen
+        2 -> HealthAmberContainer to HealthAmber
+        else -> HealthRedContainer to HealthRed
+    }
+    Surface(shape = RoundedCornerShape(8.dp), color = bgColor) {
+        Text(
+            text,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = textColor
+        )
     }
 }

@@ -32,6 +32,9 @@ import com.helpmom.mother.HelpMomApp
 import com.helpmom.mother.core.ui.theme.*
 import com.helpmom.mother.feature.pregnancy.domain.babyFruitInfo
 import com.helpmom.mother.feature.pregnancy.domain.daysRemaining
+import com.helpmom.mother.feature.pregnancy.domain.healthBadgeLabel
+import com.helpmom.mother.feature.pregnancy.domain.healthStatusLabel
+import com.helpmom.mother.feature.pregnancy.domain.timeAgoLabel
 import com.helpmom.mother.feature.pregnancy.domain.responseLabel
 import com.helpmom.mother.feature.pregnancy.domain.trimester
 import java.time.LocalDate
@@ -43,7 +46,8 @@ fun HomeScreen(
     onLearning: () -> Unit,
     onProfile: () -> Unit,
     onAlert: () -> Unit,
-    onInvite: () -> Unit = {}
+    onInvite: () -> Unit = {},
+    onSetup: () -> Unit = {}
 ) {
     val app = LocalContext.current.applicationContext as HelpMomApp
     val vm: HomeViewModel = viewModel(factory = object : ViewModelProvider.Factory {
@@ -69,10 +73,21 @@ fun HomeScreen(
         }
     }
 
-    val weeks = vm.pregnancy?.gestationalWeeks ?: 24
-    val days = vm.pregnancy?.gestationalDays ?: 3
-    val dueDate = vm.pregnancy?.dueDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-        ?: LocalDate.now().plusDays(112)
+    val pregnancy = vm.pregnancy
+    if (pregnancy == null) {
+        HomeWithoutPregnancy(
+            isLoading = vm.isLoading,
+            pregnancyMissing = vm.pregnancyMissing,
+            errorMessage = vm.errorMessage,
+            onSetup = onSetup,
+            onRetry = { vm.loadData() }
+        )
+        return
+    }
+
+    val weeks = pregnancy.gestationalWeeks
+    val days = pregnancy.gestationalDays
+    val dueDate = runCatching { LocalDate.parse(pregnancy.dueDate.take(10)) }.getOrNull() ?: LocalDate.now()
     val remainingDays = daysRemaining(dueDate)
     val currentTrimester = trimester(weeks)
     val trimesterText = when (currentTrimester) {
@@ -84,11 +99,13 @@ fun HomeScreen(
     val partnerName = vm.partnerName
     val partnerDisplayName = partnerName ?: "tu acompañante"
 
-    val healthLight = vm.healthStatus?.healthLight ?: 1
-    val (healthColor, healthContainerColor, badgeText, healthIcon) = when (healthLight) {
-        3 -> Quadruple(HealthRed, HealthRedContainer, "Urgente", Icons.Rounded.Warning)
-        2 -> Quadruple(HealthAmber, HealthAmberContainer, "Atención", Icons.Rounded.Warning)
-        else -> Quadruple(HealthGreen, HealthGreenContainer, "Estable", Icons.Rounded.CheckCircle)
+    val healthLight = vm.healthStatus?.healthLight
+    val badgeText = healthBadgeLabel(healthLight)
+    val (healthColor, healthContainerColor, healthIcon) = when (healthLight) {
+        3 -> Triple(HealthRed, HealthRedContainer, Icons.Rounded.Warning)
+        2 -> Triple(HealthAmber, HealthAmberContainer, Icons.Rounded.Warning)
+        1 -> Triple(HealthGreen, HealthGreenContainer, Icons.Rounded.CheckCircle)
+        else -> Triple(MaterialTheme.colorScheme.onSurfaceVariant, MaterialTheme.colorScheme.surfaceVariant, Icons.Rounded.CheckCircle)
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -130,7 +147,7 @@ fun HomeScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            "Gestación Segura",
+                            "Gestación segura",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -241,8 +258,11 @@ fun HomeScreen(
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Icon(healthIcon, contentDescription = null, tint = healthColor, modifier = Modifier.size(24.dp))
                             Column {
-                                Text("Estado de Salud", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                                Text("Hace unos minutos", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("Estado de salud: ${healthStatusLabel(healthLight)}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                                val measuredAgo = timeAgoLabel(vm.healthStatus?.measuredAt)
+                                if (measuredAgo.isNotBlank()) {
+                                    Text(measuredAgo, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
                             }
                         }
                         Surface(shape = RoundedCornerShape(12.dp), color = healthContainerColor) {
@@ -250,7 +270,7 @@ fun HomeScreen(
                         }
                     }
                     Text(
-                        vm.healthStatus?.healthSummary ?: "Valores dentro del rango de referencia.",
+                        vm.healthStatus?.healthSummary ?: "Aún no hay mediciones. Toma una en Mi Cuerpo.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -259,6 +279,33 @@ fun HomeScreen(
 
             // Acompañante Response Card
             vm.latestAlert?.let { alert ->
+                if (alert.status == 1) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Column {
+                                Text(
+                                    "Esperando a $partnerDisplayName…",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Text(
+                                    "Enviada ${timeAgoLabel(alert.createdAt).lowercase()}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
                 if (alert.status == 2) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -279,7 +326,7 @@ fun HomeScreen(
                                     color = MaterialTheme.colorScheme.onSecondaryContainer
                                 )
                                 Text(
-                                    "Hace unos minutos",
+                                    timeAgoLabel(alert.respondedAt ?: alert.createdAt),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
                                 )
@@ -311,7 +358,7 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Icon(Icons.Rounded.Add, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Text("Registrar Síntoma", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                        Text("Registrar síntoma", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
                 Card(
@@ -327,7 +374,7 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Icon(Icons.AutoMirrored.Rounded.MenuBook, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Text("Guía Semana $weeks", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                        Text("Guía semana $weeks", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
             }
@@ -360,4 +407,38 @@ fun HomeScreen(
     }
 }
 
-private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
+@Composable
+private fun HomeWithoutPregnancy(
+    isLoading: Boolean,
+    pregnancyMissing: Boolean,
+    errorMessage: String?,
+    onSetup: () -> Unit,
+    onRetry: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically)
+    ) {
+        when {
+            isLoading -> {
+                CircularProgressIndicator()
+                Text("Cargando tu embarazo…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            pregnancyMissing -> {
+                Text("Aún no configuraste tu embarazo", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    "Ingresa tu FUM para calcular tus semanas de gestación.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Button(onClick = onSetup, shape = RoundedCornerShape(14.dp)) { Text("Configurar embarazo") }
+            }
+            else -> {
+                Text(errorMessage ?: "No pudimos cargar tus datos.", color = MaterialTheme.colorScheme.error)
+                OutlinedButton(onClick = onRetry, shape = RoundedCornerShape(14.dp)) { Text("Reintentar") }
+            }
+        }
+    }
+}

@@ -32,7 +32,12 @@ class AppContainer(application: Application) {
     val alertsApi = retrofitClient.createApi(com.helpmom.mother.feature.alerts.data.AlertsApi::class.java)
     val triageApi = retrofitClient.createApi(com.helpmom.mother.feature.triage.data.TriageApi::class.java)
     val familyApi = retrofitClient.createApi(com.helpmom.mother.feature.family.data.FamilyApi::class.java)
-    val authRepository = com.helpmom.mother.feature.auth.data.AuthRepository(authApi, sessionStore)
+    val authRepository = com.helpmom.mother.feature.auth.data.AuthRepository(authApi) { response ->
+        sessionStore.saveSession(
+            response.accessToken, response.user.id, response.user.fullName, response.user.email,
+            response.role, response.familyGroupId
+        )
+    }
     val telemetryRepository = com.helpmom.mother.feature.telemetry.data.TelemetryRepository(telemetryApi, database.measurementDao())
     val alertsRepository = com.helpmom.mother.feature.alerts.data.AlertsRepository(alertsApi)
     val triageRepository = com.helpmom.mother.feature.triage.data.TriageRepository(triageApi)

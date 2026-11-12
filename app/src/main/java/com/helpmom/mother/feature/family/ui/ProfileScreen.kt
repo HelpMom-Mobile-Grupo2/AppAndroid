@@ -15,7 +15,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.helpmom.mother.HelpMomApp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun ProfileScreen(
@@ -27,7 +29,7 @@ fun ProfileScreen(
     val vm: ProfileViewModel = viewModel(factory = object : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            ProfileViewModel(app.container.familyApi, app.container.sessionStore) as T
+            ProfileViewModel(app.container.familyApi, app.container.pregnancyApi, app.container.sessionStore) as T
     })
 
     val scope = rememberCoroutineScope()
@@ -46,7 +48,7 @@ fun ProfileScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text(
-            "Mi Perfil",
+            "Mi perfil",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold
         )
@@ -62,9 +64,26 @@ fun ProfileScreen(
             ) {
                 Text(vm.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text(vm.email, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (vm.weekText.isNotBlank()) {
+                    Text(
+                        "Embarazo: ${vm.weekText}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.surfaceVariant)
                 Text("Acompañante vinculado:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(vm.partner, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                Text(
+                    when {
+                        vm.isLoading -> "Cargando…"
+                        vm.partner != null -> vm.partner!!
+                        else -> "Sin acompañante"
+                    },
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
         }
 
@@ -87,9 +106,14 @@ fun ProfileScreen(
                     Text("Vincular / Ver QR de Acompañante", fontWeight = FontWeight.Bold)
                 }
 
-                if (vm.partner != "Sin acompañante" && vm.partner != "Cargando…") {
+                vm.errorMessage?.let { message ->
+                    Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+
+                if (vm.partner != null) {
                     OutlinedButton(
                         onClick = { confirmUnlink = true },
+                        enabled = !vm.isUnlinking,
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 48.dp),
@@ -111,7 +135,8 @@ fun ProfileScreen(
                     onClick = {
                         scope.launch {
                             app.container.sessionStore.clear()
-                            app.container.clearLocalData()
+                            // Room no permite borrar en el hilo principal.
+                            withContext(Dispatchers.IO) { app.container.clearLocalData() }
                             onSignedOut()
                         }
                     },

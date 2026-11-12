@@ -28,8 +28,9 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.helpmom.mother.HelpMomApp
 import com.helpmom.mother.core.ui.UiState
-import com.helpmom.mother.feature.pregnancy.data.PregnancyRequest
 import com.helpmom.mother.feature.pregnancy.domain.calculateDueDate
+import com.helpmom.mother.feature.pregnancy.domain.isValidDueDate
+import com.helpmom.mother.feature.pregnancy.ui.PregnancyViewModel
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
@@ -248,20 +249,30 @@ fun TermsScreen(onAccepted: () -> Unit) {
 @Composable
 fun PregnancySetupScreen(onComplete: () -> Unit) {
     val app = LocalContext.current.applicationContext as HelpMomApp
+    val vm: PregnancyViewModel = viewModel(factory = object : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T =
+            PregnancyViewModel(app.container.pregnancyApi, app.container.sessionStore) as T
+    })
     var lmp by rememberSaveable { mutableStateOf(LocalDate.now().minusDays(70).toString()) }
     var due by rememberSaveable { mutableStateOf(calculateDueDate(LocalDate.parse(lmp)).toString()) }
-    var showDatePicker by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf("") }
-    var isSubmitting by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
+    // Qué fecha se está editando: "lmp", "due" o null.
+    var editing by rememberSaveable { mutableStateOf<String?>(null) }
+
+    val state = vm.state
+    LaunchedEffect(state) {
+        if (state is UiState.Success) onComplete()
+    }
+    val dueValid = isValidDueDate(LocalDate.parse(lmp), LocalDate.parse(due))
 
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("Configurar Embarazo", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text("Configurar embarazo", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text("Ingresa la fecha del primer día de tu última menstruación (FUM) para calcular tus semanas de gestación.")
 
         Card(
@@ -273,75 +284,80 @@ fun PregnancySetupScreen(onComplete: () -> Unit) {
                 modifier = Modifier.padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text("Fecha de Última Menstruación (FUM)", fontWeight = FontWeight.Bold)
+                Text("Fecha de última menstruación (FUM)", fontWeight = FontWeight.Bold)
                 OutlinedButton(
-                    onClick = { showDatePicker = true },
+                    onClick = { editing = "lmp" },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                     shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text("FUM: $lmp")
-                }
+                ) { Text("FUM: $lmp") }
+
+                Text("Fecha probable de parto (FPP)", fontWeight = FontWeight.Bold)
+                OutlinedButton(
+                    onClick = { editing = "due" },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) { Text("FPP: $due") }
                 Text(
-                    "Fecha probable de parto (FPP): $due",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold
+                    "Se calcula como FUM + 280 días. Puedes cambiarla si tu médico te dio otra fecha.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (!dueValid) {
+                    Text(
+                        "La FPP debe ser posterior a la FUM y como máximo 308 días después.",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
             }
         }
 
-        if (errorMessage.isNotBlank()) {
-            Text(errorMessage, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        when (state) {
+            UiState.Offline -> Text(
+                "Sin conexión. Revisa tu internet e inténtalo de nuevo.",
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall
+            )
+            is UiState.Error -> Text(state.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            else -> Unit
         }
 
         Button(
-            enabled = !isSubmitting,
-            onClick = {
-                scope.launch {
-                    isSubmitting = true
-                    errorMessage = ""
-                    val response = runCatching {
-                        app.container.pregnancyApi.createPregnancy(PregnancyRequest(lmp, due))
-                    }.getOrNull()
-
-                    isSubmitting = false
-                    if (response?.isSuccessful == true && response.body() != null) {
-                        app.container.sessionStore.savePregnancyId(response.body()!!.id)
-                        onComplete()
-                    } else {
-                        val apiErr = response?.let { com.helpmom.mother.core.network.ApiError.from(it) }
-                        errorMessage = apiErr?.detail ?: "No se pudo guardar la configuración del embarazo."
-                    }
-                }
-            },
+            enabled = state !is UiState.Loading && dueValid,
+            onClick = { vm.create(LocalDate.parse(lmp), LocalDate.parse(due)) },
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 52.dp),
-            shape = RoundedCornerShape(14.dp)
+            shape = RoundedCornerShape(16.dp)
         ) {
-            Text(if (isSubmitting) "Guardando…" else "Comenzar", fontWeight = FontWeight.Bold)
+            Text(if (state is UiState.Loading) "Guardando…" else "Comenzar", fontWeight = FontWeight.Bold)
         }
     }
 
-    if (showDatePicker) {
-        val state = rememberDatePickerState(
-            initialSelectedDateMillis = LocalDate.parse(lmp).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+    editing?.let { field ->
+        val current = LocalDate.parse(if (field == "lmp") lmp else due)
+        val pickerState = rememberDatePickerState(
+            initialSelectedDateMillis = current.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
         )
         DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
+            onDismissRequest = { editing = null },
             confirmButton = {
                 TextButton(onClick = {
-                    state.selectedDateMillis?.let {
+                    pickerState.selectedDateMillis?.let {
                         val date = Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()
-                        lmp = date.toString()
-                        due = calculateDueDate(date).toString()
+                        if (field == "lmp") {
+                            lmp = date.toString()
+                            due = calculateDueDate(date).toString()
+                        } else {
+                            due = date.toString()
+                        }
                     }
-                    showDatePicker = false
+                    editing = null
                 }) { Text("Listo") }
             },
             dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) { Text("Cancelar") }
+                TextButton(onClick = { editing = null }) { Text("Cancelar") }
             }
-        ) { DatePicker(state) }
+        ) { DatePicker(pickerState) }
     }
 }

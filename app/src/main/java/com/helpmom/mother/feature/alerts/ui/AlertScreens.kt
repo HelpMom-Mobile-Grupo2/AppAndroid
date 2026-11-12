@@ -2,7 +2,6 @@ package com.helpmom.mother.feature.alerts.ui
 
 import android.content.Intent
 import android.net.Uri
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,16 +23,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.helpmom.mother.HelpMomApp
+import com.helpmom.mother.core.ui.theme.EmergencyBackdrop
 import com.helpmom.mother.core.ui.theme.HealthRed
 import com.helpmom.mother.core.ui.theme.HealthRedContainer
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PasaLaVozSheet(onDismiss: () -> Unit) {
+fun PasaLaVozSheet(onDismiss: () -> Unit, onInvite: () -> Unit = {}) {
     val app = LocalContext.current.applicationContext as HelpMomApp
     val vm: PasaLaVozViewModel = viewModel(factory = object : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
@@ -42,6 +44,7 @@ fun PasaLaVozSheet(onDismiss: () -> Unit) {
     })
 
     var selectedType by remember { mutableIntStateOf(2) }
+    var message by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         vm.loadPartnerName()
@@ -134,19 +137,37 @@ fun PasaLaVozSheet(onDismiss: () -> Unit) {
                 }
             }
 
+            OutlinedTextField(
+                value = message,
+                onValueChange = { if (it.length <= 500) message = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Mensaje (opcional)") },
+                supportingText = { Text("${message.length}/500") },
+                shape = RoundedCornerShape(16.dp),
+                maxLines = 3
+            )
+
             if (vm.resultMessage.isNotBlank()) {
                 Text(
                     vm.resultMessage,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = if (vm.sent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
             }
 
+            if (vm.needsPartner) {
+                OutlinedButton(
+                    onClick = onInvite,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp)
+                ) { Text("Vincular ahora", fontWeight = FontWeight.Bold) }
+            }
+
             Button(
                 onClick = {
-                    vm.sendAlert(selectedType)
+                    if (vm.sent) onDismiss() else vm.sendAlert(selectedType, message)
                 },
                 enabled = !vm.isLoading,
                 modifier = Modifier
@@ -156,7 +177,11 @@ fun PasaLaVozSheet(onDismiss: () -> Unit) {
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
                 Text(
-                    if (vm.isLoading) "Enviando…" else "Confirmar y Enviar Notificación",
+                    when {
+                        vm.isLoading -> "Enviando…"
+                        vm.sent -> "Listo"
+                        else -> "Confirmar y enviar notificación"
+                    },
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp
                 )
@@ -172,12 +197,20 @@ fun EmergencyDialog(
     guidance: String,
     onSafe: () -> Unit
 ) {
-    BackHandler(enabled = true) {} // Prevent dismiss on back button (Item 6 requirement)
-
+    // Dialog de pantalla completa: tapa también la barra inferior y
+    // no se cierra con atrás ni tocando fuera (solo con "Ya estoy a salvo").
+    Dialog(
+        onDismissRequest = {},
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false
+        )
+    ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xCC2A0808)), // Dark red 80% backdrop (Figma Frame 7)
+            .background(EmergencyBackdrop), // Rojo oscuro al 80 % (Figma frame 7)
         contentAlignment = Alignment.Center
     ) {
         Card(
@@ -218,7 +251,7 @@ fun EmergencyDialog(
                 )
 
                 Text(
-                    "Atención Requerida: Posible Emergencia",
+                    "Atención requerida: posible emergencia",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center
@@ -247,7 +280,7 @@ fun EmergencyDialog(
                     colors = ButtonDefaults.buttonColors(containerColor = HealthRed)
                 ) {
                     Text(
-                        "Llamar a Urgencias (106 / SAMU)",
+                        "Llamar a urgencias (106 / SAMU)",
                         fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
@@ -270,5 +303,6 @@ fun EmergencyDialog(
                 }
             }
         }
+    }
     }
 }
