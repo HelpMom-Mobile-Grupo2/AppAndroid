@@ -9,6 +9,7 @@ import com.helpmom.mother.core.network.ApiError
 import com.helpmom.mother.feature.triage.data.TriageApi
 import com.helpmom.mother.feature.triage.data.TriageConversationDto
 import com.helpmom.mother.feature.triage.data.TriageMessageRequest
+import com.helpmom.mother.feature.triage.data.TriageSummaryDto
 import kotlinx.coroutines.launch
 
 class ChatViewModel(private val triageApi: TriageApi) : ViewModel() {
@@ -21,6 +22,42 @@ class ChatViewModel(private val triageApi: TriageApi) : ViewModel() {
     var emergencyGuidance: String? by mutableStateOf(null)
     var isSending: Boolean by mutableStateOf(false)
         private set
+    var history: List<TriageSummaryDto> by mutableStateOf(emptyList())
+        private set
+    var isLoadingHistory: Boolean by mutableStateOf(false)
+        private set
+
+    /** GET /api/triage: conversaciones anteriores, la más reciente primero. */
+    fun loadHistory() {
+        viewModelScope.launch {
+            isLoadingHistory = true
+            runCatching { triageApi.conversations() }
+                .onSuccess { response ->
+                    if (response.isSuccessful) history = response.body().orEmpty().sortedByDescending { it.createdAt }
+                    else errorMessage = ApiError.from(response).detail
+                }
+                .onFailure { errorMessage = "Sin conexión. No se pudo cargar el historial." }
+            isLoadingHistory = false
+        }
+    }
+
+    /** GET /api/triage/{id}: abre una conversación anterior para seguirla. */
+    fun openConversation(id: String) {
+        viewModelScope.launch {
+            errorMessage = ""
+            runCatching { triageApi.conversation(id) }
+                .onSuccess { response ->
+                    if (response.isSuccessful) conversation = response.body()
+                    else errorMessage = ApiError.from(response).detail
+                }
+                .onFailure { errorMessage = "Sin conexión. No se pudo abrir la conversación." }
+        }
+    }
+
+    fun newConversation() {
+        conversation = null
+        errorMessage = ""
+    }
 
     fun sendMessage() {
         val content = inputMessage.trim()
@@ -49,7 +86,9 @@ class ChatViewModel(private val triageApi: TriageApi) : ViewModel() {
                     emergencyGuidance = res.guidance ?: "Busca ayuda médica de inmediato."
                 }
             }.onFailure { err ->
-                errorMessage = err.message ?: "No pudimos enviar tu mensaje."
+                inputMessage = content
+                errorMessage = if (err is java.io.IOException) "Sin conexión. Tu mensaje no se envió."
+                else err.message ?: "No pudimos enviar tu mensaje."
             }
         }
     }
