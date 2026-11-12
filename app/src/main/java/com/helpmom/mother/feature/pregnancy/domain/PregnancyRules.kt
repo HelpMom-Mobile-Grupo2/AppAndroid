@@ -111,3 +111,7 @@ fun healthStatusLabel(healthLight: Int?): String = when (healthLight) {
     1 -> "Normal"
     else -> "Sin mediciones"
 }
+
+/** La FPP debe ser posterior a la FUM y como máximo FUM + 308 días (44 semanas). */
+fun isValidDueDate(lastMenstrualPeriod: LocalDate, dueDate: LocalDate): Boolean =
+    dueDate.isAfter(lastMenstrualPeriod) && !dueDate.isAfter(lastMenstrualPeriod.plusDays(308))
