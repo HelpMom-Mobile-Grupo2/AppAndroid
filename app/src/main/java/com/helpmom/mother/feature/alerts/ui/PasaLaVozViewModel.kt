@@ -21,6 +21,11 @@ class PasaLaVozViewModel(
         private set
     var isLoading: Boolean by mutableStateOf(false)
         private set
+    /** true cuando el backend responde 409: la mamá aún no tiene acompañante vinculado. */
+    var needsPartner: Boolean by mutableStateOf(false)
+        private set
+    var sent: Boolean by mutableStateOf(false)
+        private set
 
     fun loadPartnerName() {
         viewModelScope.launch {
@@ -31,22 +36,32 @@ class PasaLaVozViewModel(
         }
     }
 
-    fun sendAlert(type: Int) {
+    fun sendAlert(type: Int, message: String = "") {
+        if (isLoading) return
         viewModelScope.launch {
             isLoading = true
             resultMessage = ""
-            val displayName = partnerName ?: "tu acompañante"
-            val response = runCatching {
-                alertsApi.createAlert(CreateAlertRequest(type = type))
-            }.getOrNull()
+            needsPartner = false
+            val displayName = partnerName ?: "Tu acompañante"
+            val text = message.trim().take(500).ifBlank { null }
+            val result = runCatching {
+                alertsApi.createAlert(CreateAlertRequest(type = type, message = text))
+            }
 
             isLoading = false
-            if (response?.isSuccessful == true) {
-                resultMessage = "$displayName fue notificado."
-            } else if (response?.code() == 409) {
-                resultMessage = "Aún no vinculas a tu acompañante."
-            } else {
-                resultMessage = "No se pudo enviar. Inténtalo nuevamente."
+            val response = result.getOrNull()
+            when {
+                response?.isSuccessful == true -> {
+                    sent = true
+                    resultMessage = "$displayName fue notificado."
+                }
+                response?.code() == 409 -> {
+                    needsPartner = true
+                    resultMessage = "Aún no vinculas a tu acompañante."
+                }
+                result.exceptionOrNull() is java.io.IOException ->
+                    resultMessage = "Sin conexión. Inténtalo nuevamente."
+                else -> resultMessage = "No se pudo enviar. Inténtalo nuevamente."
             }
         }
     }
