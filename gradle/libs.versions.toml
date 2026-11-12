@@ -19,6 +19,7 @@ desugarJdkLibs = "2.1.5"
 ksp = "2.3.11"
 zxing = "3.5.3"
 coil = "3.1.0"
+coroutinesTest = "1.10.2"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -51,6 +52,7 @@ room-compiler = { group = "androidx.room", name = "room-compiler", version.ref =
 desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_libs", version.ref = "desugarJdkLibs" }
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
 coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutinesTest" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
