@@ -10,13 +10,23 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
+import com.helpmom.mother.core.session.SessionStore
 import com.helpmom.mother.feature.family.data.FamilyApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.Instant
+import java.time.OffsetDateTime
 
-class InvitePartnerViewModel(private val familyApi: FamilyApi) : ViewModel() {
+/** Convierte la fecha del backend (ISO con zona) a Instant; null si no se puede leer. */
+fun parseExpiry(value: String): Instant? =
+    runCatching { OffsetDateTime.parse(value).toInstant() }.getOrNull()
+
+class InvitePartnerViewModel(
+    private val familyApi: FamilyApi,
+    private val sessionStore: SessionStore
+) : ViewModel() {
 
     var code: String by mutableStateOf("")
         private set
@@ -30,7 +40,11 @@ class InvitePartnerViewModel(private val familyApi: FamilyApi) : ViewModel() {
         private set
     var isLoading: Boolean by mutableStateOf(false)
         private set
+    var errorMessage: String? by mutableStateOf(null)
+        private set
+    private var countdownJob: Job? = null
 
+    /** Muestra la invitación vigente guardada; solo pide una nueva si no hay o ya venció. */
     fun loadOrGenerateInvitation() {
         viewModelScope.launch {
             isLoading = true
@@ -39,22 +53,53 @@ class InvitePartnerViewModel(private val familyApi: FamilyApi) : ViewModel() {
                     partnerName = family?.members?.firstOrNull { it.role == 3 }?.fullName
                 }
 
-            runCatching { familyApi.createInvitation() }.onSuccess { response ->
-                val invitation = response.body()
-                if (response.isSuccessful && invitation != null) {
-                    code = invitation.code
-                    expiresAt = invitation.expiresAt
-                    qrBitmap = generateQR(code)
-                    startCountdown()
-                }
+            val saved = sessionStore.savedInvitation()
+            val savedExpiry = saved?.let { parseExpiry(it.second) }
+            if (saved != null && savedExpiry != null && savedExpiry.isAfter(Instant.now().plusSeconds(60))) {
+                showInvitation(saved.first, saved.second)
+                isLoading = false
+            } else {
+                requestNewInvitation()
             }
-            isLoading = false
         }
     }
 
+    /** Pide un código nuevo. El backend anula el código anterior. */
+    fun generateNewInvitation() {
+        viewModelScope.launch { requestNewInvitation() }
+    }
+
+    private suspend fun requestNewInvitation() {
+        isLoading = true
+        errorMessage = null
+        runCatching { familyApi.createInvitation() }
+            .onSuccess { response ->
+                val invitation = response.body()
+                if (response.isSuccessful && invitation != null) {
+                    sessionStore.saveInvitation(invitation.code, invitation.expiresAt)
+                    showInvitation(invitation.code, invitation.expiresAt)
+                } else {
+                    errorMessage = "No se pudo generar el código."
+                }
+            }
+            .onFailure {
+                errorMessage = if (it is java.io.IOException) "Sin conexión. Inténtalo de nuevo."
+                else "No se pudo generar el código."
+            }
+        isLoading = false
+    }
+
+    private fun showInvitation(newCode: String, newExpiresAt: String) {
+        code = newCode
+        expiresAt = newExpiresAt
+        qrBitmap = generateQR(newCode)
+        startCountdown()
+    }
+
     private fun startCountdown() {
-        viewModelScope.launch {
-            val expiry = runCatching { Instant.parse(expiresAt) }.getOrNull() ?: return@launch
+        countdownJob?.cancel()
+        countdownJob = viewModelScope.launch {
+            val expiry = parseExpiry(expiresAt) ?: return@launch
             while (true) {
                 val seconds = Duration.between(Instant.now(), expiry).seconds
                 if (seconds <= 0) {
