@@ -146,7 +146,13 @@ fun HelpMomNavHost() {
                         Text(if (checked) "Preparando tu espacio…" else "HelpMom", style = MaterialTheme.typography.headlineLarge)
                     }
                 }
-                composable(Routes.TERMS) { TermsScreen { nav.navigate(Routes.LOGIN) { popUpTo(Routes.TERMS) { inclusive = true } } } }
+                composable(Routes.TERMS) {
+                    TermsScreen {
+                        // Desde Perfil solo se vuelve atrás; en el primer uso se sigue al login.
+                        if (nav.previousBackStackEntry != null) nav.popBackStack()
+                        else nav.navigate(Routes.LOGIN) { popUpTo(Routes.TERMS) { inclusive = true } }
+                    }
+                }
                 composable(Routes.LOGIN) {
                     LoginScreen {
                         scope.launch {
