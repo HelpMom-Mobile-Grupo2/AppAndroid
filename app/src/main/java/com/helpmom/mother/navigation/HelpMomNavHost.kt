@@ -26,10 +26,29 @@ import com.helpmom.mother.feature.auth.ui.TermsScreen
 import com.helpmom.mother.feature.family.ui.InvitePartnerScreen
 import com.helpmom.mother.feature.family.ui.ProfileScreen
 import com.helpmom.mother.feature.learning.ui.LearningScreen
+import com.helpmom.mother.feature.pregnancy.domain.findPregnancyId
 import com.helpmom.mother.feature.pregnancy.ui.HomeScreen
 import com.helpmom.mother.feature.telemetry.ui.BodyScreen
 import com.helpmom.mother.feature.telemetry.ui.SymptomScreen
 import com.helpmom.mother.feature.triage.ui.ChatScreen
+import kotlinx.coroutines.launch
+
+/**
+ * Después de iniciar sesión: si la mamá ya tiene un embarazo va a Inicio,
+ * si no, a Configurar embarazo. Así no se crea un embarazo duplicado.
+ */
+private suspend fun routeAfterLogin(app: HelpMomApp): String {
+    val store = app.container.sessionStore
+    val pregnancyId = findPregnancyId(store.current().pregnancyId) {
+        app.container.pregnancyApi.getPregnancies().body()?.firstOrNull()?.id
+    }
+    return if (pregnancyId == null) {
+        Routes.PREGNANCY_SETUP
+    } else {
+        store.savePregnancyId(pregnancyId)
+        Routes.HOME
+    }
+}
 
 private data class Destination(val route: String, val label: Int, val icon: ImageVector)
 private val destinations = listOf(
@@ -48,6 +67,7 @@ fun HelpMomNavHost() {
             nav.navigate(Routes.LOGIN) { popUpTo(nav.graph.id) { inclusive = true } }
         }
     }
+    val scope = rememberCoroutineScope()
     val entry by nav.currentBackStackEntryAsState()
     val current = entry?.destination
     val rail = !currentWindowAdaptiveInfo().windowSizeClass.windowWidthSizeClass.toString().contains("COMPACT", true)
@@ -117,8 +137,7 @@ fun HelpMomNavHost() {
                         val next = when {
                             session.termsAcceptedAt == null -> Routes.TERMS
                             session.token.isNullOrBlank() -> Routes.LOGIN
-                            session.pregnancyId.isNullOrBlank() -> Routes.PREGNANCY_SETUP
-                            else -> Routes.HOME
+                            else -> routeAfterLogin(appCtx)
                         }
                         nav.navigate(next) { popUpTo(Routes.SPLASH) { inclusive = true } }
                         checked = true
@@ -128,18 +147,32 @@ fun HelpMomNavHost() {
                     }
                 }
                 composable(Routes.TERMS) { TermsScreen { nav.navigate(Routes.LOGIN) { popUpTo(Routes.TERMS) { inclusive = true } } } }
-                composable(Routes.LOGIN) { LoginScreen { nav.navigate(Routes.PREGNANCY_SETUP) { popUpTo(Routes.LOGIN) { inclusive = true } } } }
+                composable(Routes.LOGIN) {
+                    LoginScreen {
+                        scope.launch {
+                            val next = routeAfterLogin(app)
+                            nav.navigate(next) { popUpTo(Routes.LOGIN) { inclusive = true } }
+                        }
+                    }
+                }
                 composable(Routes.PREGNANCY_SETUP) { PregnancySetupScreen { nav.navigate(Routes.HOME) { popUpTo(Routes.PREGNANCY_SETUP) { inclusive = true } } } }
                 composable(Routes.HOME) { HomeScreen(
                     onBody = { nav.navigate(Routes.BODY) }, onSymptom = { nav.navigate(Routes.SYMPTOM) },
                     onLearning = { nav.navigate(Routes.LEARNING) }, onProfile = { nav.navigate(Routes.PROFILE) },
-                    onAlert = { nav.navigate(Routes.ALERT) }
+                    onAlert = { nav.navigate(Routes.ALERT) },
+                    onInvite = { nav.navigate(Routes.INVITE_PARTNER) },
+                    onSetup = { nav.navigate(Routes.PREGNANCY_SETUP) }
                 ) }
                 composable(Routes.BODY) { BodyScreen(onBack = { nav.popBackStack() }, onSymptom = { nav.navigate(Routes.SYMPTOM) }) }
                 composable(Routes.ASSISTANT) { ChatScreen() }
                 composable(Routes.LEARNING) { LearningScreen() }
                 composable(Routes.SYMPTOM) { SymptomScreen { nav.popBackStack() } }
-                composable(Routes.ALERT) { PasaLaVozSheet { nav.popBackStack() } }
+                composable(Routes.ALERT) {
+                    PasaLaVozSheet(
+                        onDismiss = { nav.popBackStack() },
+                        onInvite = { nav.navigate(Routes.INVITE_PARTNER) { popUpTo(Routes.ALERT) { inclusive = true } } }
+                    )
+                }
                 composable(Routes.PROFILE) { ProfileScreen(onInvite = { nav.navigate(Routes.INVITE_PARTNER) }, onTerms = { nav.navigate(Routes.TERMS) }, onSignedOut = { nav.navigate(Routes.LOGIN) { popUpTo(nav.graph.id) { inclusive = true } } }) }
                 composable(Routes.INVITE_PARTNER) { InvitePartnerScreen(onBack = { nav.popBackStack() }) }
             }
