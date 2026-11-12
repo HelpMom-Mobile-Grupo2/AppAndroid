@@ -33,7 +33,12 @@ class HomeViewModel(
         private set
     var healthStatus: TelemetryDto? by mutableStateOf(null)
         private set
-    var isLoading: Boolean by mutableStateOf(false)
+    var isLoading: Boolean by mutableStateOf(true)
+        private set
+    /** true cuando el backend respondió que la mamá no tiene embarazo registrado. */
+    var pregnancyMissing: Boolean by mutableStateOf(false)
+        private set
+    var errorMessage: String? by mutableStateOf(null)
         private set
 
     fun loadData() {
@@ -49,16 +54,26 @@ class HomeViewModel(
                     .ifBlank { "M" }
             }
 
-            runCatching { pregnancyApi.getPregnancies().body()?.firstOrNull() }
-                .onSuccess { pregnancy = it }
+            errorMessage = null
+            runCatching { pregnancyApi.getPregnancies() }
+                .onSuccess { response ->
+                    if (response.isSuccessful) {
+                        pregnancy = response.body()?.firstOrNull()
+                        pregnancyMissing = pregnancy == null
+                        pregnancy?.let { sessionStore.savePregnancyId(it.id) }
+                    } else {
+                        errorMessage = "No pudimos cargar tu embarazo."
+                    }
+                }
+                .onFailure { errorMessage = "Sin conexión. Desliza o vuelve a intentar." }
 
             runCatching { familyApi.getFamily().body() }
                 .onSuccess { family ->
                     partnerName = family?.members?.firstOrNull { it.role == 3 }?.fullName
                 }
 
-            runCatching { telemetryApi.status().body() }
-                .onSuccess { healthStatus = it }
+            runCatching { telemetryApi.status() }
+                .onSuccess { response -> healthStatus = if (response.isSuccessful) response.body() else null }
 
             runCatching { alertsApi.getAlerts("all").body()?.firstOrNull() }
                 .onSuccess { latestAlert = it }
